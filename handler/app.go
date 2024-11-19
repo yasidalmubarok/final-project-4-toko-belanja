@@ -15,8 +15,23 @@ import (
 	"toko-belanja-app/service/transaction_history_service"
 	"toko-belanja-app/service/user_service"
 
+	_ "toko-belanja-app/docs"
+
 	"github.com/gin-gonic/gin"
+	
+	swaggoFile "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
 )
+
+// @title Toko Belanja
+// @version 1.0
+// description Final Project 4 Kampus Merdeka
+
+// @contact.name GLNG-KS07 - Group 5
+// @contact.url https://github.com/yusrililhm/final-project-4-toko-belanja
+
+// @host final-project-4-toko-belanja-production.up.railway.app
+// @BasePath /
 
 func StartApplication() {
 
@@ -37,50 +52,53 @@ func StartApplication() {
 	categoryHandler := NewCategoryHandler(categoryService)
 
 	productRepo := product_pg.NewProductPg(db)
-	productService := product_service.NewProductService(productRepo)
+	productService := product_service.NewProductService(productRepo, categoryRepo)
 	productHandler := NewProductHandler(productService)
 
 	transactionHistoryRepo := transaction_history_pg.NewTransactionHistoryPg(db)
 	transactionHistoryService := transaction_history_service.NewTransactionHistoryService(transactionHistoryRepo, productRepo, userRepo)
 	transactionHistoryHandler := NewTransactionHistoryHandler(transactionHistoryService)
 
-	authService := auth_service.NewAuthService()
-	_ = authService
+	authService := auth_service.NewAuthService(userRepo)
 
 	app := gin.Default()
 
+	// swagger
+	app.GET("/swagger/*any", ginSwagger.WrapHandler(swaggoFile.Handler))
+
+	// routing
 	users := app.Group("users")
 
 	{
 		users.POST("/register", userHandler.UserRegister)
 		users.POST("/login", userHandler.UserLogin)
-		users.PATCH("/topup", userHandler.UserTopUp)
+		users.PATCH("/topup", authService.Authentication(), userHandler.UserTopUp)
 	}
 
 	products := app.Group("products")
 
 	{
-		products.POST("", productHandler.AddProduct)
-		products.GET("", productHandler.GetProducts)
-		products.PUT("/:productId", productHandler.UpdateProduct)
-		products.DELETE("/:productId", productHandler.DeleteProduct)
+		products.POST("", authService.Authentication(), authService.AdminAuthorization(), productHandler.AddProduct)
+		products.GET("", authService.Authentication(), productHandler.GetProducts)
+		products.PUT("/:productId", authService.Authentication(), authService.AdminAuthorization(), productHandler.UpdateProduct)
+		products.DELETE("/:productId", authService.Authentication(), authService.AdminAuthorization(), productHandler.DeleteProduct)
 	}
 
 	categories := app.Group("categories")
 
 	{
-		categories.POST("", categoryHandler.AddCategory)
-		categories.GET("", categoryHandler.GetCategories)
-		categories.PATCH("/:categoryId", categoryHandler.UpdateCategory)
-		categories.DELETE("/:categoryId", categoryHandler.DeleteCategory)
+		categories.POST("", authService.Authentication(), authService.AdminAuthorization(), categoryHandler.AddCategory)
+		categories.GET("", authService.Authentication(), authService.AdminAuthorization(), categoryHandler.GetCategories)
+		categories.PATCH("/:categoryId", authService.Authentication(), authService.AdminAuthorization(), categoryHandler.UpdateCategory)
+		categories.DELETE("/:categoryId", authService.Authentication(), authService.AdminAuthorization(), categoryHandler.DeleteCategory)
 	}
 
 	transactionHistories := app.Group("transactions")
 
 	{
-		transactionHistories.POST("", transactionHistoryHandler.AddTransaction)
-		transactionHistories.GET("/my-transactions", transactionHistoryHandler.GetMyTransaction)
-		transactionHistories.GET("/user-transactions", transactionHistoryHandler.GetUsersTransaction)
+		transactionHistories.POST("", authService.Authentication(), transactionHistoryHandler.AddTransaction)
+		transactionHistories.GET("/my-transactions", authService.Authentication(), transactionHistoryHandler.GetMyTransaction)
+		transactionHistories.GET("/user-transactions", authService.Authentication(), authService.AdminAuthorization(), transactionHistoryHandler.GetUsersTransaction)
 	}
 
 	app.Run(":" + config.AppConfig().Port)
